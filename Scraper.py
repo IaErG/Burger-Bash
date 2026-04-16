@@ -1,10 +1,22 @@
 from bs4 import BeautifulSoup
 import requests
+from time import sleep
 
+# Method to gracefully skip over urls that don't return a 200 status code
+def safe_fetch(url):
+    try:
+        r = requests.get(url, timeout=6)
+        if r.status_code != 200:
+            return None
+        if "504 Gateway Time-out" in r.text:
+            return None
+        return r
+    except:
+        return None
 
 def gather_burger_data(url):
-    # Website details for Burger Bash, update the link if it has changed
-    response = requests.get(url)
+    # Website details for Burger Bash, update the link if it has changed   
+    response = safe_fetch(url)
     soup = BeautifulSoup(response.text, "html.parser")
 
     # Get all listings on the website
@@ -13,11 +25,13 @@ def gather_burger_data(url):
     # Create an array for holding burger info dictionaries as well as a names array for filtering out duplicates
     burgers = []
     names = []
+    skipped = []
 
     # Go through all listings on the website
     for l in listings:
         # Create a dictionary to store the details we want to add to the spreadsheet
         entry = {
+            "picture" : '',
             "addresss" : '',
             "name" : '',
             "price" : 0,
@@ -27,9 +41,18 @@ def gather_burger_data(url):
         }
 
         # Get/filter details from the listings as well as the link for the listing itself
-        detailsResponse = requests.get(l['href'])
+        detailsResponse = safe_fetch(l['href'])
+        # If the link is invalid skip it
+        if detailsResponse is None:
+            #print("Skipping link ::", l['href'])
+            skipped.append(l['href'])
+            continue
+
+        # Get the information necessary on the details page
         burgerDetails = BeautifulSoup(detailsResponse.text, "html.parser")
         div_info = burgerDetails.find("div", class_="listing-section")
+        img = burgerDetails.find("img", class_="attachment-post-thumbnail size-post-thumbnail wp-post-image")
+        picture = img.get('src') if img else None
         paragraphs = div_info.find_all("p", recursive=False)
 
         # Name is in format 'name $price' so we can get both with that, sometimes has * character splitting it too
@@ -53,6 +76,7 @@ def gather_burger_data(url):
             entry['donation'] = 0
 
         # Fill out the rest of the information and add to the burgers list
+        entry['picture']    = picture
         entry['addresss']   = l['data-address']
         entry['name']       = name
         entry['price']      = price
@@ -61,6 +85,8 @@ def gather_burger_data(url):
         
         burgers.append(entry)
     
+    print("Burgers:", len(burgers))
+    print("Skipped:", len(skipped))
     return burgers
 
 
