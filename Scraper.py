@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup
 import requests
 from time import sleep
 
-# Method to gracefully skip over urls that don't return a 200 status code
+# Method to skip over urls that don't return a 200 status code
 def safe_fetch(url):
     try:
         r = requests.get(url, timeout=6)
@@ -15,7 +15,7 @@ def safe_fetch(url):
         return None
 
 def gather_burger_data(url):
-    # Website details for Burger Bash, update the link if it has changed   
+    # Website details for Burger Bash  
     response = safe_fetch(url)
     soup = BeautifulSoup(response.text, "html.parser")
 
@@ -77,7 +77,7 @@ def gather_burger_data(url):
 
         # Fill out the rest of the information and add to the burgers list
         entry['picture']    = picture
-        entry['addresss']   = l['data-address']
+        entry['address']   = l['data-address']
         entry['name']       = name
         entry['price']      = price
         entry['restaurant'] = l.find("h3").text.strip()
@@ -85,8 +85,14 @@ def gather_burger_data(url):
         
         burgers.append(entry)
     
+    # Output how many burgers we gathered as well as how many we had to skip
     print("Burgers:", len(burgers))
     print("Skipped:", len(skipped))
+    # For the ones we skipped let the user know what they were
+    for s in skipped:
+        print(s['restaurant'], s['name'])
+
+    # Return all the burgers that we got in a list
     return burgers
 
 
