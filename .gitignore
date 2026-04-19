@@ -1,3 +1,4 @@
 # .gitignore
 token.json
-__pycache__
+/__pycache__/*
+.env

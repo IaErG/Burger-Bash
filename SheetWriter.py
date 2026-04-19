@@ -12,7 +12,7 @@ def create_table(spreadsheet, sheet, burger_list):
         "endColumnIndex": 6
     }
 
-    # Send A request to the sheet to create a table and add yes/no formatting
+    # Send A request to the sheet to create a table and add yes/no formatting, also to give dimensions for the picture column
     spreadsheet.batch_update(
         {
             "requests": [
@@ -70,13 +70,37 @@ def create_table(spreadsheet, sheet, burger_list):
                         },
                         "index": 1
                     }
+                },
+                {
+                    "updateDimensionProperties": { # Size adjustment for the picture width
+                        "range": {
+                            "sheetId": sheet.id,
+                            "dimension": "ROWS",
+                            "startIndex": 1,  # 1 to skip header
+                            "endIndex": len(burger_list)
+                        },
+                        "properties": {"pixelSize": 150},
+                        "fields": "pixelSize"
+                    }
+                },
+                {
+                    "updateDimensionProperties": { # Size adjustment for the picture height
+                        "range": {
+                            "sheetId": sheet.id,
+                            "dimension": "COLUMNS",
+                            "startIndex": 1,  # 1 to skip header
+                            "endIndex": 2 # Just the first column
+                        },
+                        "properties": {"pixelSize": 500},
+                        "fields": "pixelSize"
+                    }
                 }
             ]
         }
     )
 
 
-# Method to apply stylistic formatting to the sheets present in the given spreadsheet
+# Method to apply specific formatting to the sheets present in the given spreadsheet
 def format_sheet(spreadsheet):
     # Get the metadata about the spreadsheet
     spreadsheet_data = spreadsheet.fetch_sheet_metadata()
@@ -88,13 +112,14 @@ def format_sheet(spreadsheet):
 
     # Go through each of the sheets found in the spreadsheet
     for s in sheets_data:
+        sheet = spreadsheet.get_worksheet_by_id(s['properties']['sheetId'])
         # Dynamically get the table data found on the given sheet
         table_data = s.get("tables", [])[0]
         table_range = table_data['range']
         end_col_letter = chr(ord("A") + table_range["endColumnIndex"] - 1)
 
         # Format the header row in the sheet
-        s.format(
+        sheet.format(
             f"A1:{end_col_letter}1", 
             {
                 "textFormat": {
@@ -117,7 +142,7 @@ def format_sheet(spreadsheet):
             }
         )
 
-        # Add boarder request for the given sheet to the requests array
+        # Add boarder update request for the given sheet to the requests array
         requests.append(
             {
                 "updateBorders": {
@@ -143,12 +168,11 @@ def format_sheet(spreadsheet):
 
 # Resets a given spreadsheet before writing to it
 def reset_spreadsheet(spreadsheet):
-    # Get the data of the spreadsheet entered
+    # Get the data of the spreadsheet entered and initialize an array for requests to send
     sheets_data = spreadsheet.fetch_sheet_metadata().get("sheets", [])
-
     requests = []
 
-    # Check for tables on the sheets to delete
+    # Check for tables on the sheets to delete and add the delete requests to the array
     for sheet in sheets_data:
         for table in sheet.get("tables", []):
             requests.append({
@@ -156,11 +180,6 @@ def reset_spreadsheet(spreadsheet):
                     "tableId": table["tableId"]
                 }
             })
-
-    # If we found tables then request to delete them, also reset our requests to send
-    if requests:
-        spreadsheet.batch_update({"requests": requests})
-        requests = []
 
     # Gather the sheets present, the first one needs to remain however
     sheets_data = spreadsheet.fetch_sheet_metadata().get("sheets", [])
@@ -185,7 +204,7 @@ def reset_spreadsheet(spreadsheet):
         }
     })
 
-    # If we had sheets to delete send all our requests in
+    # Send off our requests for removing sheets and tables
     if requests:
         spreadsheet.batch_update({"requests": requests})
 
@@ -212,14 +231,15 @@ def reset_spreadsheet(spreadsheet):
 
 # Method to organize all the data gathered into 3 location based arrays
 def get_locations(headers, data):
+    # Initialize the arrays with the header row as the first entry
     halifax = [headers]
     dartmouth = [headers]
     elsewhere = [headers]
 
     # Since mayo can be any one of these 3 I just made a list to help with validating if the burger has mayo in it
-    mayo_keywords = ["mayo", "aoli", "mayonnaise"]
+    mayo_keywords = ["mayo", "aioli", "mayonnaise"]
 
-    # Go through all the burgers we got from Burger Bash website
+    # Go through all the burgers we got from the Burger Bash website
     for burger in data:
         # Determine if mayo is in the burger
         mayo = 'No'
@@ -246,9 +266,9 @@ def get_locations(headers, data):
         ]
 
         # Depending on the location of the given entry, add it to the appropriate list
-        if 'Halifax' in burger['address']:
+        if burger['city'] == 'Halifax':
             halifax.append(row)
-        elif 'Dartmouth' in burger['address']:
+        elif burger['city'] == 'Dartmouth':
             dartmouth.append(row)
         else:
             elsewhere.append(row)
@@ -257,7 +277,7 @@ def get_locations(headers, data):
 
 
 # Write the burger bash data gathered from the website to the google sheet
-def write_to_sheet(data):
+def write_to_sheet(data, sheet_name):
     # Define scopes for using the api
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -269,14 +289,16 @@ def write_to_sheet(data):
     client = gspread.authorize(creds)
 
     # Open the spreadsheet you gave edit access to by name and create the 3 location sheets
-    spreadsheet = client.open("Test Sheet")
+    spreadsheet = client.open(sheet_name)
 
     # If there's any data there delete it first before proceeding
     reset_spreadsheet(spreadsheet)
 
+    # Update/add the sheets we will need for this list
     spreadsheet.get_worksheet(0).update_title("Halifax")
     spreadsheet.add_worksheet(title="Dartmouth", rows=100, cols=10)
     spreadsheet.add_worksheet(title="Elsewhere", rows=100, cols=10)
+    
     # Store the sheets in variables to be used later
     halifax_sheet = spreadsheet.get_worksheet(0)
     dartmouth_sheet = spreadsheet.get_worksheet(1)
@@ -285,16 +307,20 @@ def write_to_sheet(data):
     # Setup a header row for each sheet as well as get the 3 location lists from inputted data
     headers = ["Picture", "Location", "Name", "Description", "Mayo", "Chicken", "Price", "Donation $", "Donation %"]
     halifax, dartmouth, elsewhere = get_locations(headers, data)
+    print("Burger data sorted")
 
-    # Create the table to hold the data in each of the sheets made
+    # Create the tables to hold the burger data in each of the sheets made
     create_table(spreadsheet, halifax_sheet, halifax)
     create_table(spreadsheet, dartmouth_sheet, dartmouth)
     create_table(spreadsheet, elsewhere_sheet, elsewhere)
+    print("Tables created")
 
-    # Write the data to the sheets
-    halifax_sheet.update(halifax)
-    dartmouth_sheet.update(dartmouth)
-    elsewhere_sheet.update(elsewhere)
+    # Write the data to the sheets making sure to allow for the picture to show in column A1
+    halifax_sheet.update(halifax, "A1", value_input_option="USER_ENTERED")
+    dartmouth_sheet.update(dartmouth, "A1", value_input_option="USER_ENTERED")
+    elsewhere_sheet.update(elsewhere, "A1", value_input_option="USER_ENTERED")
+    print("Information added")
 
     # Appy formatting to all the sheets in the spreadsheet
     format_sheet(spreadsheet)
+    print("Spreadsheet formatted")
