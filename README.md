@@ -20,3 +20,5 @@ This way the script that uses your token will be able to write to the sheet you 
 Once this setup has been finished run:
 
 _python ./Main.py {Burger Bash Link} {Google Sheet Name}_
+
+EX: python .\Main.py https://burgerbash.ca/burger-lineup/# 'Test Sheet'
